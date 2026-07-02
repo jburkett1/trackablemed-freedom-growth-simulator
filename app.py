@@ -76,7 +76,7 @@ with st.sidebar:
     asc_ownership = st.slider("Physician / group ASC ownership", 0, 100, 100, 5) / 100
 
     st.header("Marketing Inputs")
-    media_budget = st.slider("Monthly ad budget paid directly to Advertising Platform", 5000, 75000, 15000, 2500)
+    media_budget = st.slider("Monthly ad budget paid directly to Advertising Platforms", 5000, 75000, 15000, 2500)
     tm_fee = st.number_input("TrackableMed monthly fee", min_value=0, max_value=50000, value=10000, step=1000)
     cost_per_lead = st.number_input("Estimated qualified lead cost", min_value=25, max_value=2000, value=150, step=25)
 
