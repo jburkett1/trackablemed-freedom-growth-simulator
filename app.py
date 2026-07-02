@@ -6,13 +6,17 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
+from datetime import datetime
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.enums import TA_RIGHT
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
 APP_DIR = Path(__file__).parent
 LOGO_PATH = APP_DIR / "assets" / "trackablemed_logo.svg"
+LOGO_PNG_PATH = APP_DIR / "assets" / "trackablemed_logo.png"
 
 st.set_page_config(page_title="Freedom Growth Economics Simulator", page_icon="📈", layout="wide")
 
@@ -191,48 +195,197 @@ Based on the current model, moving from {current_implants:.0f} to {target_implan
 """.strip()
 st.text_area("Copy-ready summary", summary, height=180)
 
-def build_pdf() -> bytes:
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=0.55*inch, leftMargin=0.55*inch, topMargin=0.55*inch, bottomMargin=0.55*inch)
-    styles = getSampleStyleSheet()
-    story = []
-    story.append(Paragraph("Freedom Growth Economics Report", styles["Title"]))
-    story.append(Paragraph("Prepared for physician-owned ASC growth discussion", styles["Normal"]))
-    story.append(Spacer(1, 0.2*inch))
-    rows = [["Metric", "Value"],
-            ["Current implants/month", f"{current_implants:.1f}"],
-            ["Target implants/month", f"{target_implants:.1f}"],
-            ["Incremental implants/month", f"{incremental_implants:.1f}"],
-            ["Monthly physician revenue", fmt_money(monthly_physician_revenue)],
-            ["Monthly ASC contribution margin", fmt_money(monthly_asc_profit)],
-            ["Combined monthly economics", fmt_money(monthly_total_economics)],
-            ["Monthly investment", fmt_money(monthly_investment)],
-            ["ROI multiple", f"{roi_multiple:.1f}x"],
-            ["Payback period", payback_text],
-            ["Annualized opportunity", fmt_money(annual_opportunity)],
-            ["Break-even implants/month", f"{break_even_implants:.1f}"]]
-    table = Table(rows, colWidths=[3.5*inch, 2.2*inch])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#111827")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D1D5DB")),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("BACKGROUND", (0,1), (-1,-1), colors.HexColor("#F9FAFB")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F9FAFB")]),
+
+def _pdf_footer(canvas_obj: canvas.Canvas, doc):
+    """Draw a TrackableMed footer and planning disclaimer on every PDF page."""
+    page_w, page_h = landscape(letter)
+    canvas_obj.saveState()
+    canvas_obj.setStrokeColor(colors.HexColor("#E5E7EB"))
+    canvas_obj.setLineWidth(0.7)
+    canvas_obj.line(0.45 * inch, 0.52 * inch, page_w - 0.45 * inch, 0.52 * inch)
+    canvas_obj.setFillColor(colors.HexColor("#111827"))
+    canvas_obj.setFont("Helvetica-Bold", 8.5)
+    canvas_obj.drawString(0.50 * inch, 0.35 * inch, "Prepared by TrackableMed")
+    canvas_obj.setFont("Helvetica", 8.5)
+    canvas_obj.drawString(2.10 * inch, 0.35 * inch, "www.trackablemed.com")
+    canvas_obj.setFillColor(colors.HexColor("#6B7280"))
+    canvas_obj.setFont("Helvetica", 7.2)
+    canvas_obj.drawRightString(page_w - 0.50 * inch, 0.35 * inch, f"Page {doc.page}")
+    disclaimer = (
+        "Planning note: This calculator is for business planning only and does not constitute reimbursement, coding, legal, or compliance advice. "
+        "Payer coverage, coding, medical necessity, documentation, contract terms, device pricing, and final payment amounts must be verified by the provider and ASC."
+    )
+    canvas_obj.drawString(0.50 * inch, 0.18 * inch, disclaimer[:205] + "...")
+    canvas_obj.restoreState()
+
+
+def _kpi_card(label: str, value: str, subtext: str):
+    label_style = ParagraphStyle("kpi_label", fontName="Helvetica-Bold", fontSize=7.3, textColor=colors.HexColor("#6B7280"), leading=9)
+    value_style = ParagraphStyle("kpi_value", fontName="Helvetica-Bold", fontSize=17.5, textColor=colors.HexColor("#111827"), leading=20)
+    sub_style = ParagraphStyle("kpi_sub", fontName="Helvetica", fontSize=7.3, textColor=colors.HexColor("#4B5563"), leading=9)
+    t = Table(
+        [[Paragraph(label.upper(), label_style)], [Paragraph(value, value_style)], [Paragraph(subtext, sub_style)]],
+        colWidths=[2.46 * inch],
+        rowHeights=[0.17 * inch, 0.32 * inch, 0.24 * inch],
+    )
+    t.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#E5E7EB")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
-    story.append(table)
-    story.append(Spacer(1, 0.25*inch))
-    story.append(Paragraph("Follow-Up Summary", styles["Heading2"]))
-    story.append(Paragraph(summary, styles["BodyText"]))
-    story.append(Spacer(1, 0.18*inch))
-    story.append(Paragraph("Planning note: This calculator is for business planning only and does not constitute reimbursement, coding, legal, or compliance advice. Payer coverage, coding, medical necessity, documentation, contract terms, device pricing, and final payment amounts must be verified by the provider and ASC.", styles["Italic"]))
-    doc.build(story)
+    return t
+
+
+def _styled_table(headers, rows, col_widths):
+    t = Table([headers] + rows, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8.2),
+        ("FONTSIZE", (0, 1), (-1, -1), 7.9),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D1D5DB")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return t
+
+
+def _bar_chart(title, labels, values):
+    max_val = max(values) if values else 1
+    title_style = ParagraphStyle("chart_title", fontName="Helvetica-Bold", fontSize=9.2, textColor=colors.HexColor("#111827"))
+    label_style = ParagraphStyle("bar_label", fontName="Helvetica", fontSize=7.6, textColor=colors.HexColor("#374151"))
+    value_style = ParagraphStyle("bar_value", fontName="Helvetica-Bold", fontSize=7.6, textColor=colors.HexColor("#111827"), alignment=TA_RIGHT)
+    rows = [[Paragraph(title, title_style), "", ""]]
+    for label, value in zip(labels, values):
+        width = max(0.05, value / max_val) * 2.65 * inch if max_val else 0.05 * inch
+        bar = Table([[""]], colWidths=[width], rowHeights=[0.16 * inch])
+        bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFC300")), ("BOX", (0, 0), (-1, -1), 0.2, colors.HexColor("#FFC300"))]))
+        display = fmt_money(value) if value >= 1000 else fmt_num(value)
+        rows.append([Paragraph(label, label_style), bar, Paragraph(display, value_style)])
+    t = Table(rows, colWidths=[1.35 * inch, 2.70 * inch, 0.70 * inch])
+    t.setStyle(TableStyle([
+        ("SPAN", (0, 0), (-1, 0)),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#E5E7EB")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 1), (-1, -1), "MIDDLE"),
+    ]))
+    return t
+
+
+def build_pdf() -> bytes:
+    """Build a branded, dashboard-style PDF report."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(letter),
+        rightMargin=0.45 * inch,
+        leftMargin=0.45 * inch,
+        topMargin=0.42 * inch,
+        bottomMargin=0.72 * inch,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("tm_title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=18, leading=21, textColor=colors.white, alignment=TA_RIGHT, spaceAfter=0)
+    subtitle_style = ParagraphStyle("tm_subtitle", parent=styles["Normal"], fontName="Helvetica", fontSize=8.4, leading=10, textColor=colors.HexColor("#E5E7EB"), alignment=TA_RIGHT)
+    summary_style = ParagraphStyle("summary", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.2, leading=10.2, textColor=colors.HexColor("#111827"))
+    section_style = ParagraphStyle("section", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=10.5, textColor=colors.HexColor("#111827"), spaceBefore=7, spaceAfter=4)
+    small_style = ParagraphStyle("small", parent=styles["Normal"], fontName="Helvetica", fontSize=7.7, leading=9.0, textColor=colors.HexColor("#6B7280"))
+
+    story = []
+
+    if LOGO_PNG_PATH.exists():
+        logo = Image(str(LOGO_PNG_PATH), width=1.75 * inch, height=0.55 * inch)
+    else:
+        logo = Paragraph("TrackableMed", ParagraphStyle("logo_text", fontName="Helvetica-Bold", fontSize=18, textColor=colors.HexColor("#FFC300")))
+
+    date_text = datetime.now().strftime("%B %d, %Y")
+    header_right = [
+        Paragraph("Freedom Growth Economics Report", title_style),
+        Paragraph(f"Prepared for physician-owned ASC growth discussion  |  {date_text}", subtitle_style),
+    ]
+    header_table = Table([[logo, header_right]], colWidths=[3.0 * inch, 7.0 * inch], rowHeights=[0.74 * inch])
+    header_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#111827")),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#111827")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (0, 0), 16),
+        ("RIGHTPADDING", (1, 0), (1, 0), 16),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 0.10 * inch))
+
+    kpi_wrap = Table([[
+        _kpi_card("Incremental Implants", f"{fmt_num(incremental_implants)}/mo", "Target minus current volume"),
+        _kpi_card("Monthly Economics", fmt_money(monthly_total_economics), "Physician revenue + ASC margin"),
+        _kpi_card("ROI Multiple", f"{roi_multiple:.1f}x", "Before income tax or distributions"),
+        _kpi_card("Payback Period", payback_text, "Based on monthly economics"),
+    ]], colWidths=[2.5 * inch, 2.5 * inch, 2.5 * inch, 2.5 * inch])
+    kpi_wrap.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(kpi_wrap)
+    story.append(Spacer(1, 0.09 * inch))
+
+    econ_rows = [
+        ["Incremental physician professional revenue / month", fmt_money(monthly_physician_revenue)],
+        ["Incremental ASC contribution margin / month", fmt_money(monthly_asc_profit)],
+        ["Combined monthly economics", fmt_money(monthly_total_economics)],
+        ["Monthly TrackableMed + media investment", fmt_money(monthly_investment)],
+        ["Net monthly gain after investment", fmt_money(net_monthly_gain)],
+        ["Annualized growth opportunity", fmt_money(annual_opportunity)],
+    ]
+    be_rows = [
+        ["Implant pathways", fmt_num(break_even_implants)],
+        ["Trials", fmt_num(break_even_trials)],
+        ["Completed consults", fmt_num(break_even_consults)],
+        ["Qualified leads", fmt_num(break_even_leads)],
+        ["Maximum allowable lead cost", fmt_money(max_allowable_cpl)],
+    ]
+    econ_table = _styled_table(["Economic Output", "Value"], econ_rows, [3.25 * inch, 1.25 * inch])
+    be_table = _styled_table(["Break-Even Thresholds", "Monthly Amount"], be_rows, [2.95 * inch, 1.35 * inch])
+    funnel_chart = _bar_chart("Funnel Forecast From Media Budget", funnel_labels, funnel_values)
+
+    mid_row = Table([[econ_table, be_table, funnel_chart]], colWidths=[3.55 * inch, 3.30 * inch, 3.18 * inch])
+    mid_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
+    story.append(mid_row)
+    story.append(Spacer(1, 0.10 * inch))
+
+    story.append(_bar_chart("Scenario Comparison", scenario_names, scenario_values))
+    story.append(Spacer(1, 0.08 * inch))
+
+    story.append(Paragraph("Meeting Follow-Up Summary", section_style))
+    summary_table = Table([[Paragraph(summary, summary_style)]], colWidths=[10.04 * inch])
+    summary_table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#E5E7EB")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F9FAFB")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 0.06 * inch))
+    story.append(Paragraph("Prepared by TrackableMed | www.trackablemed.com", small_style))
+
+    doc.build(story, onFirstPage=_pdf_footer, onLaterPages=_pdf_footer)
     return buffer.getvalue()
 
 st.download_button(
-    "Download PDF Report",
+    "Download Executive Dashboard PDF",
     data=build_pdf(),
-    file_name="Freedom_Growth_Economics_Report.pdf",
+    file_name="Freedom_Growth_Economics_Dashboard_Report.pdf",
     mime="application/pdf",
 )
 
