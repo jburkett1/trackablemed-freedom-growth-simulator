@@ -242,8 +242,9 @@ def _footer(canvas_obj: canvas.Canvas, doc):
 
 def _make_styles():
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle("HeaderTitle", fontName="Helvetica-Bold", fontSize=15, leading=17, textColor=colors.white, alignment=TA_RIGHT))
-    styles.add(ParagraphStyle("HeaderSubtitle", fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#E5E7EB"), alignment=TA_RIGHT))
+    styles.add(ParagraphStyle("HeaderTitle", fontName="Helvetica-Bold", fontSize=15.5, leading=17.5, textColor=TM_TEXT, alignment=TA_RIGHT))
+    styles.add(ParagraphStyle("HeaderSubtitle", fontName="Helvetica", fontSize=8.2, leading=9.8, textColor=colors.HexColor("#4B5563"), alignment=TA_RIGHT))
+    styles.add(ParagraphStyle("HeaderDate", fontName="Helvetica", fontSize=7.5, leading=9, textColor=TM_MUTED, alignment=TA_RIGHT))
     styles.add(ParagraphStyle("KPILabel", fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=TM_MUTED))
     styles.add(ParagraphStyle("KPIValue", fontName="Helvetica-Bold", fontSize=15, leading=17, textColor=TM_TEXT))
     styles.add(ParagraphStyle("KPISub", fontName="Helvetica", fontSize=6.7, leading=8, textColor=colors.HexColor("#4B5563")))
@@ -255,24 +256,48 @@ def _make_styles():
     return styles
 
 def _header_block(styles):
+    """White branded PDF header matching the Streamlit app hero copy."""
     logo_path = find_logo_png()
     if logo_path:
-        logo = Image(str(logo_path), width=2.25 * inch, height=0.42 * inch)
+        logo = Image(str(logo_path), width=2.35 * inch, height=0.45 * inch)
     else:
-        logo = Paragraph("TrackableMed", ParagraphStyle("logo_text", fontName="Helvetica-Bold", fontSize=16, textColor=TM_YELLOW))
-    title = Paragraph("Freedom Growth Economics Report", styles["HeaderTitle"])
-    subtitle = Paragraph(f"Prepared for physician-owned ASC growth discussion<br/>{datetime.now().strftime('%B %d, %Y')}", styles["HeaderSubtitle"])
-    t = Table([[logo, [title, subtitle]]], colWidths=[2.7 * inch, 4.1 * inch], rowHeights=[0.72 * inch])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), TM_DARK),
-        ("BOX", (0, 0), (-1, -1), 0.6, TM_DARK),
+        logo = Paragraph("TrackableMed", ParagraphStyle("logo_text", fontName="Helvetica-Bold", fontSize=18, textColor=colors.HexColor("#1F77B4")))
+
+    title = Paragraph("Freedom Growth Economics Simulator", styles["HeaderTitle"])
+    subtitle = Paragraph(
+        "Translate Curonix Freedom PNS growth goals into physician revenue, ASC contribution margin, payback, and ROI.",
+        styles["HeaderSubtitle"]
+    )
+    date_text = Paragraph(datetime.now().strftime("%B %d, %Y"), styles["HeaderDate"])
+
+    header_content = Table(
+        [[logo, [title, subtitle, date_text]]],
+        colWidths=[2.55 * inch, 4.25 * inch],
+        rowHeights=[0.68 * inch],
+    )
+    header_content.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (0, 0), 14),
-        ("RIGHTPADDING", (1, 0), (1, 0), 14),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (0, 0), 0),
+        ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
-    return t
+
+    accent_rule = Table([[""]], colWidths=[6.8 * inch], rowHeights=[0.045 * inch])
+    accent_rule.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), TM_YELLOW),
+        ("BOX", (0, 0), (-1, -1), 0, TM_YELLOW),
+    ]))
+
+    wrapper = Table([[header_content], [accent_rule]], colWidths=[6.8 * inch])
+    wrapper.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return wrapper
 
 def _kpi_card(label, value, subtext, styles):
     rows = [
